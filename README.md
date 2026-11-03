@@ -1,2 +1,2 @@
 # VEND
-Repo for the wending machine locator website, VEND
+Repo for the vending machine locator website, VEND
