@@ -31,12 +31,14 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --panel-w: 392px;
   --r: 12px;
+  --tile-filter: none;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0d1411; --panel: #141d19; --fg: #e5ede8; --muted: #93a39b; --line: #26332d;
     --chip: #1d2a24; --accent: #3cc48d; --accent-ink: #062a1a; --glass: #e5ede8; --danger: #ff7a63;
     --shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .3);
+    --tile-filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6);
     color-scheme: dark;
   }
 }
@@ -44,6 +46,7 @@
   --bg: #0d1411; --panel: #141d19; --fg: #e5ede8; --muted: #93a39b; --line: #26332d;
   --chip: #1d2a24; --accent: #3cc48d; --accent-ink: #062a1a; --glass: #e5ede8; --danger: #ff7a63;
   --shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .3);
+  --tile-filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6);
   color-scheme: dark;
 }
 
@@ -189,6 +192,7 @@ body.placing .panel, body.placing .fab { display: none; }
 .marker-cluster span { line-height: 1; }
 .leaflet-container { font-family: var(--font-body); background: var(--bg); }
 .leaflet-control-attribution { font-size: 10px; }
+.leaflet-tile-pane { filter: var(--tile-filter); }
 .leaflet-bottom.leaflet-right { margin-right: 4px; }
 
 /* ---------- Modal form ---------- */
@@ -425,14 +429,11 @@ function thumb(url, w) {
 // ---------- Map ----------
 const map = L.map('map', { zoomControl: false, worldCopyJump: true, minZoom: 2 });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
-const dark = () => document.documentElement.dataset.theme === 'dark' ||
-  (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-const tiles = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark() ? 'dark_all' : 'rastertiles/voyager'}/{z}/{x}/{y}{r}.png`, {
-  maxZoom: 20, subdomains: 'abcd',
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+// OpenStreetMap standard tiles: free, no API key. Dark mode darkens them with a CSS filter (--tile-filter).
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () =>
-  tiles.setUrl(`https://{s}.basemaps.cartocdn.com/${dark() ? 'dark_all' : 'rastertiles/voyager'}/{z}/{x}/{y}{r}.png`));
 
 const cluster = L.markerClusterGroup({
   showCoverageOnHover: false, maxClusterRadius: 44, spiderfyOnMaxZoom: true,
