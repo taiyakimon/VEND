@@ -377,7 +377,7 @@ textarea { min-height: 76px; resize: vertical; }
    CONFIG — paste your Apps Script web app URL (ends in /exec) here.
    Leave it empty to run in demo mode with the built-in copy of the data.
    ===================================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbyahnOsXDJ_Nm3qZpFxB8IWNByyPTQCYFMVM5yw88_1AsX6n6bH_e686Y2DIXoWdKs/exec';
+const API_URL = '';
 
 const CATEGORIES = [
   { name: 'Cold Drinks', color: '#00a9da', icon: '🥤' },
@@ -427,12 +427,12 @@ const map = L.map('map', { zoomControl: false, worldCopyJump: true, minZoom: 2 }
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 const dark = () => document.documentElement.dataset.theme === 'dark' ||
   (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-const tiles = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark() ? 'dark_all' : 'rvoyager'}/{z}/{x}/{y}{r}.png`, {
+const tiles = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark() ? 'dark_all' : 'rastertiles/voyager'}/{z}/{x}/{y}{r}.png`, {
   maxZoom: 20, subdomains: 'abcd',
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
 }).addTo(map);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () =>
-  tiles.setUrl(`https://{s}.basemaps.cartocdn.com/${dark() ? 'dark_all' : 'rvoyager'}/{z}/{x}/{y}{r}.png`));
+  tiles.setUrl(`https://{s}.basemaps.cartocdn.com/${dark() ? 'dark_all' : 'rastertiles/voyager'}/{z}/{x}/{y}{r}.png`));
 
 const cluster = L.markerClusterGroup({
   showCoverageOnHover: false, maxClusterRadius: 44, spiderfyOnMaxZoom: true,
