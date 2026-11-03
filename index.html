@@ -146,7 +146,8 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; li
 .panel.showing-detail .tagline, .panel.showing-detail .search, .panel.showing-detail .filters { display: none; }
 
 /* Placing mode */
-.crosshair { position: fixed; z-index: 550; left: 50%; top: 50%; translate: -50% -100%; pointer-events: none; }
+.crosshair { position: fixed; z-index: 550; left: 50%; top: 50%; translate: -50% -100%; pointer-events: none; line-height: 0; filter: drop-shadow(0 3px 4px rgba(0,0,0,.3)); }
+.crosshair svg { display: block; }
 .place-bar {
   position: fixed; z-index: 700; left: 50%; translate: -50% 0; bottom: max(20px, calc(env(safe-area-inset-bottom, 0px) + 20px));
   background: var(--panel); box-shadow: var(--shadow); border-radius: 16px; padding: 14px; display: grid; gap: 10px;
@@ -155,6 +156,7 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; li
 .place-bar p { margin: 0; font-weight: 600; }
 .place-bar .actions { justify-content: flex-end; }
 body.placing .panel, body.placing .fab { display: none; }
+body.placing .toast { bottom: max(170px, calc(env(safe-area-inset-bottom, 0px) + 170px)); }
 
 /* ---------- Markers ---------- */
 .pin {
@@ -281,10 +283,12 @@ textarea { min-height: 76px; resize: vertical; }
 <div class="banner" id="banner" hidden></div>
 
 <!-- Placing a new pin -->
-<svg class="crosshair" id="crosshair" hidden width="40" height="52" viewBox="0 0 40 52" aria-hidden="true">
-  <path d="M20 50s16-16.5 16-30A16 16 0 0 0 4 20c0 13.5 16 30 16 30Z" fill="currentColor" style="color: var(--accent)" stroke="#fff" stroke-width="2.5"/>
-  <circle cx="20" cy="20" r="6" fill="#fff"/>
-</svg>
+<div class="crosshair" id="crosshair" hidden aria-hidden="true">
+  <svg width="40" height="52" viewBox="0 0 40 52">
+    <path d="M20 50s16-16.5 16-30A16 16 0 0 0 4 20c0 13.5 16 30 16 30Z" fill="var(--accent)" stroke="#fff" stroke-width="2.5"/>
+    <circle cx="20" cy="20" r="6" fill="#fff"/>
+  </svg>
+</div>
 <div class="place-bar" id="placeBar" hidden>
   <p>Move the map so the pin sits on the machine</p>
   <div class="coords" id="placeCoords"></div>
@@ -316,7 +320,7 @@ textarea { min-height: 76px; resize: vertical; }
         <textarea id="f-desc" maxlength="2000" placeholder="Brands, products, prices…"></textarea>
       </div>
       <div class="field">
-        <label for="f-addr">Address</label>
+        <label for="f-addr">Address <span class="hint" id="f-addr-hint"></span></label>
         <input id="f-addr" type="text" maxlength="300" placeholder="Street address or building">
       </div>
       <div class="field">
@@ -678,7 +682,43 @@ $('placeNext').addEventListener('click', () => {
   const c = map.getCenter(); state.newLatLng = { lat: +c.lat.toFixed(7), lng: +c.lng.toFixed(7) };
   $('f-coords').textContent = `Pin at ${state.newLatLng.lat}, ${state.newLatLng.lng}`;
   $('placeBar').hidden = true; $('modal').hidden = false; $('f-name').focus();
+  fillAddress(state.newLatLng);
 });
+
+// Nearest address for the pin, from OpenStreetMap's free Nominatim service (no API key;
+// one lookup per "Next" tap keeps within its one-request-per-second policy).
+// Only fills the field while it's empty or still holds a previous automatic value.
+let addrSeq = 0, addrAuto = false;
+$('f-addr').addEventListener('input', () => { addrAuto = false; $('f-addr-hint').textContent = ''; });
+async function fillAddress({ lat, lng }) {
+  const input = $('f-addr'), hint = $('f-addr-hint');
+  if (input.value.trim() && !addrAuto) return;
+  const seq = ++addrSeq;
+  hint.textContent = 'looking up nearest address…';
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+    const res = await fetch(url, { headers: { 'Accept-Language': navigator.language || 'en' } });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    if (seq !== addrSeq || (input.value.trim() && !addrAuto)) return;
+    const addr = formatAddress(data);
+    if (!addr) { hint.textContent = ''; return; }
+    input.value = addr; addrAuto = true;
+    hint.textContent = 'filled in from the pin, edit if needed';
+  } catch {
+    if (seq === addrSeq) hint.textContent = '';
+  }
+}
+function formatAddress(d) {
+  const a = d && d.address;
+  if (!a) return d && d.display_name ? d.display_name.split(', ').slice(0, 4).join(', ') : '';
+  const street = [a.house_number, a.road || a.pedestrian || a.footway || a.path].filter(Boolean).join(' ');
+  const place = a.city || a.town || a.village || a.hamlet || a.suburb || a.county;
+  const region = [a.state || a.region, a.postcode].filter(Boolean).join(' ');
+  const parts = [street || a.amenity || a.building || a.shop, place, region, a.country_code && a.country_code !== 'us' ? a.country : '']
+    .filter(Boolean);
+  return parts.length ? parts.join(', ') : (d.display_name || '');
+}
 
 $('f-cats').innerHTML = CATEGORIES.map((c, i) => `<label class="opt"><input type="radio" name="cat" value="${esc(c.name)}" ${i === 0 ? 'checked' : ''}><span>${c.icon} ${esc(c.name)}</span></label>`).join('');
 $('f-public').innerHTML = [['Yes', 'Yes'], ['No', 'No'], ['', 'Not sure']].map(([v, t], i) => `<label class="opt"><input type="radio" name="pub" value="${v}" ${i === 0 ? 'checked' : ''}><span>${t}</span></label>`).join('');
@@ -757,7 +797,7 @@ $('addForm').addEventListener('submit', async e => {
   } finally { btn.disabled = false; btn.textContent = 'Add to map'; }
 });
 function finishAdd(loc) {
-  $('addForm').reset(); state.photos = []; renderPhotos(); closeForm(false);
+  $('addForm').reset(); addrAuto = false; $('f-addr-hint').textContent = ''; state.photos = []; renderPhotos(); closeForm(false);
   if (loc) { state.cats.add(catOf(loc.category).name); refresh(); select(loc.id); toast('Added to the map'); }
 }
 
