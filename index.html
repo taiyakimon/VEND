@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VEND</title>
 <meta name="description" content="Crowdsourced map of vending machines. Find one nearby or add a machine you spotted.">
-<meta name="theme-color" content="#14805a">
+<meta name="theme-color" content="#ffffff">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
@@ -14,40 +14,24 @@
 <style>
 /* Layout: full-bleed map; a control panel docks left on desktop and becomes a bottom sheet on phones. */
 :root {
-  /* ===== Config tokens ===== */
-  --bg: #f3f6f4;
+  /* Light-only theme: white surfaces, dark gray text, green accent for actions. */
+  --bg: #f7f7f6;
   --panel: #ffffff;
-  --fg: #16201b;
-  --muted: #5d6b64;
-  --line: #dde4e0;
-  --chip: #eaf0ec;
+  --fg: #2e3230;
+  --muted: #6b716e;
+  --line: #e3e5e4;
+  --chip: #f1f3f2;
   --accent: #14805a;
   --accent-ink: #ffffff;
-  --glass: #0f1a15;
+  --glass: #2e3230;
   --danger: #b4321f;
-  --shadow: 0 10px 30px rgba(14, 40, 28, .14), 0 2px 6px rgba(14, 40, 28, .08);
+  --shadow: 0 8px 24px rgba(30, 34, 32, .10), 0 1px 4px rgba(30, 34, 32, .06);
   --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
   --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --panel-w: 392px;
   --r: 12px;
-  --tile-filter: none;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0d1411; --panel: #141d19; --fg: #e5ede8; --muted: #93a39b; --line: #26332d;
-    --chip: #1d2a24; --accent: #3cc48d; --accent-ink: #062a1a; --glass: #e5ede8; --danger: #ff7a63;
-    --shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .3);
-    --tile-filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6);
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0d1411; --panel: #141d19; --fg: #e5ede8; --muted: #93a39b; --line: #26332d;
-  --chip: #1d2a24; --accent: #3cc48d; --accent-ink: #062a1a; --glass: #e5ede8; --danger: #ff7a63;
-  --shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .3);
-  --tile-filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6);
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -70,10 +54,6 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; li
 }
 .panel-head { padding: 18px 18px 12px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; }
-.logo {
-  width: 38px; height: 38px; border-radius: 9px; background: var(--accent); color: var(--accent-ink);
-  display: grid; place-items: center; font: 800 13px/1 var(--font-mono); letter-spacing: .02em;
-}
 .brand h1 { font-size: 28px; font-weight: 800; letter-spacing: .04em; }
 .brand .count { margin-left: auto; font: 500 12px var(--font-mono); color: var(--muted); text-align: right; }
 .tagline { color: var(--muted); font-size: 13.5px; margin: 0; }
@@ -192,7 +172,6 @@ body.placing .panel, body.placing .fab { display: none; }
 .marker-cluster span { line-height: 1; }
 .leaflet-container { font-family: var(--font-body); background: var(--bg); }
 .leaflet-control-attribution { font-size: 10px; }
-.leaflet-tile-pane { filter: var(--tile-filter); }
 .leaflet-bottom.leaflet-right { margin-right: 4px; }
 
 /* ---------- Modal form ---------- */
@@ -252,7 +231,6 @@ textarea { min-height: 76px; resize: vertical; }
   .sheet-toggle::before { content: ""; display: block; height: 5px; border-radius: 3px; background: var(--line); }
   .tagline { display: none; }
   .brand h1 { font-size: 22px; }
-  .logo { width: 32px; height: 32px; }
   .fab { bottom: auto; top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px)); right: max(72px, calc(env(safe-area-inset-right, 0px) + 72px)); padding: 11px 16px; }
   .banner { top: auto; bottom: calc(46% + 12px); left: 16px; right: 16px; max-width: none; }
   .modal { padding: 0; place-items: end stretch; }
@@ -268,7 +246,6 @@ textarea { min-height: 76px; resize: vertical; }
   <div class="panel-head">
     <button class="sheet-toggle" id="sheetToggle" aria-label="Expand or collapse the list"></button>
     <div class="brand">
-      <div class="logo" aria-hidden="true">A1</div>
       <h1>VEND</h1>
       <div class="count" id="count"></div>
     </div>
@@ -429,7 +406,7 @@ function thumb(url, w) {
 // ---------- Map ----------
 const map = L.map('map', { zoomControl: false, worldCopyJump: true, minZoom: 2 });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
-// OpenStreetMap standard tiles: free, no API key. Dark mode darkens them with a CSS filter (--tile-filter).
+// OpenStreetMap standard tiles: free, no API key.
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
