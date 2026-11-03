@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VEND</title>
+<meta name="description" content="Crowdsourced map of vending machines. Find one nearby or add a machine you spotted.">
+<meta name="theme-color" content="#14805a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<style>
+/* Layout: full-bleed map; a control panel docks left on desktop and becomes a bottom sheet on phones. */
+:root {
+  /* ===== Config tokens ===== */
+  --bg: #f3f6f4;
+  --panel: #ffffff;
+  --fg: #16201b;
+  --muted: #5d6b64;
+  --line: #dde4e0;
+  --chip: #eaf0ec;
+  --accent: #14805a;
+  --accent-ink: #ffffff;
+  --glass: #0f1a15;
+  --danger: #b4321f;
+  --shadow: 0 10px 30px rgba(14, 40, 28, .14), 0 2px 6px rgba(14, 40, 28, .08);
+  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --panel-w: 392px;
+  --r: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1411; --panel: #141d19; --fg: #e5ede8; --muted: #93a39b; --line: #26332d;
+    --chip: #1d2a24; --accent: #3cc48d; --accent-ink: #062a1a; --glass: #e5ede8; --danger: #ff7a63;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1411; --panel: #141d19; --fg: #e5ede8; --muted: #93a39b; --line: #26332d;
+  --chip: #1d2a24; --accent: #3cc48d; --accent-ink: #062a1a; --glass: #e5ede8; --danger: #ff7a63;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 2px 6px rgba(0, 0, 0, .3);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--font-body); overflow: hidden; }
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.1; }
+
+#map { position: fixed; inset: 0; background: var(--bg); z-index: 0; }
+
+/* ---------- Panel ---------- */
+.panel {
+  position: fixed; z-index: 500; top: max(12px, env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px));
+  bottom: max(12px, env(safe-area-inset-bottom, 0px)); width: var(--panel-w);
+  background: var(--panel); border-radius: 16px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panel-head { padding: 18px 18px 12px; display: grid; gap: 12px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo {
+  width: 38px; height: 38px; border-radius: 9px; background: var(--accent); color: var(--accent-ink);
+  display: grid; place-items: center; font: 800 13px/1 var(--font-mono); letter-spacing: .02em;
+}
+.brand h1 { font-size: 28px; font-weight: 800; letter-spacing: .04em; }
+.brand .count { margin-left: auto; font: 500 12px var(--font-mono); color: var(--muted); text-align: right; }
+.tagline { color: var(--muted); font-size: 13.5px; margin: 0; }
+.search { position: relative; }
+.search input[type=text] {
+  width: 100%; padding: 10px 12px 10px 36px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+.search svg { position: absolute; left: 11px; top: 50%; translate: 0 -50%; color: var(--muted); }
+
+.filters { display: grid; gap: 10px; }
+.label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel); font-size: 13px; line-height: 1.2;
+}
+.chip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--accent)); }
+.chip .n { font: 500 11px var(--font-mono); color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--chip); border-color: var(--accent); }
+.chip[aria-pressed="false"].cat { opacity: .55; }
+.chip:disabled { opacity: .35; cursor: default; }
+.more-toggle { justify-self: start; background: none; border: 0; padding: 0; color: var(--accent); font-size: 13px; font-weight: 600; }
+
+.list { flex: 1; overflow-y: auto; padding: 6px 8px 96px; min-height: 0; }
+.list-meta { padding: 8px 10px 4px; font-size: 12.5px; color: var(--muted); }
+.item {
+  display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; width: 100%;
+  text-align: left; background: none; border: 0; border-radius: 10px; padding: 8px 10px;
+}
+.item:hover { background: var(--chip); }
+.thumb {
+  width: 56px; height: 56px; border-radius: 8px; background: var(--chip) center/cover no-repeat;
+  display: grid; place-items: center; font-size: 22px;
+}
+.item-body { min-width: 0; }
+.item-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-sub { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty { padding: 28px 16px; text-align: center; color: var(--muted); }
+
+/* ---------- Detail ---------- */
+.detail { flex: 1; overflow-y: auto; min-height: 0; padding-bottom: 96px; }
+.detail-top { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+  display: grid; place-items: center;
+}
+.gallery { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 4px; background: var(--chip); }
+.gallery a { flex: 0 0 100%; scroll-snap-align: start; aspect-ratio: 4/3; max-width: 100%; }
+.gallery img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gallery-count { font: 500 12px var(--font-mono); color: var(--muted); padding: 6px 18px 0; }
+.detail-body { padding: 16px 18px; display: grid; gap: 16px; }
+.cat-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--c); }
+.cat-tag .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.detail h2 { font-size: 24px; font-weight: 800; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 0; }
+.facts dt { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding-top: 2px; }
+.facts dd { margin: 0; white-space: pre-line; min-width: 0; overflow-wrap: anywhere; }
+.pay { display: flex; flex-wrap: wrap; gap: 6px; }
+.pay span { padding: 2px 8px; border-radius: 6px; background: var(--chip); font-size: 13px; }
+.stars { display: flex; align-items: center; gap: 2px; }
+.stars button { background: none; border: 0; padding: 2px; font-size: 22px; line-height: 1; color: var(--line); }
+.stars button.on { color: #e7a417; }
+.stars .avg { margin-left: 8px; font: 500 12px var(--font-mono); color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel); font-weight: 600; font-size: 14px; text-decoration: none; color: var(--fg);
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.coords { font: 500 12px var(--font-mono); color: var(--muted); }
+
+/* ---------- Map controls ---------- */
+.fab {
+  position: fixed; z-index: 600; right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px));
+  bottom: max(20px, calc(env(safe-area-inset-bottom, 0px) + 20px));
+  display: inline-flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: 999px; border: 0;
+  background: var(--accent); color: var(--accent-ink); font: 600 15px var(--font-body); box-shadow: var(--shadow);
+}
+.locate {
+  position: fixed; z-index: 600; right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px));
+  top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px));
+  width: 44px; height: 44px; border-radius: 12px; border: 0; background: var(--panel); color: var(--fg);
+  box-shadow: var(--shadow); display: grid; place-items: center;
+}
+.banner {
+  position: fixed; z-index: 650; left: calc(var(--panel-w) + 28px); top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px));
+  background: var(--panel); border-radius: 12px; box-shadow: var(--shadow); padding: 10px 14px; font-size: 13.5px;
+  max-width: min(520px, calc(100vw - var(--panel-w) - 100px));
+}
+.panel.showing-detail .tagline, .panel.showing-detail .search, .panel.showing-detail .filters { display: none; }
+
+/* Placing mode */
+.crosshair { position: fixed; z-index: 550; left: 50%; top: 50%; translate: -50% -100%; pointer-events: none; }
+.place-bar {
+  position: fixed; z-index: 700; left: 50%; translate: -50% 0; bottom: max(20px, calc(env(safe-area-inset-bottom, 0px) + 20px));
+  background: var(--panel); box-shadow: var(--shadow); border-radius: 16px; padding: 14px; display: grid; gap: 10px;
+  width: min(440px, calc(100vw - 32px));
+}
+.place-bar p { margin: 0; font-weight: 600; }
+.place-bar .actions { justify-content: flex-end; }
+body.placing .panel, body.placing .fab { display: none; }
+
+/* ---------- Markers ---------- */
+.pin {
+  width: 34px; height: 34px; border-radius: 50% 50% 50% 4px; rotate: -45deg; background: var(--c);
+  border: 2px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.3); display: grid; place-items: center;
+}
+.pin span { rotate: 45deg; font-size: 16px; line-height: 1; }
+.pin.sel { outline: 3px solid var(--glass); outline-offset: 1px; }
+.marker-cluster div {
+  background: var(--accent); color: var(--accent-ink); font: 600 13px var(--font-mono);
+  border-radius: 50%; width: 34px; height: 34px; margin: 3px; display: grid; place-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.marker-cluster { background: color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 50%; }
+.marker-cluster span { line-height: 1; }
+.leaflet-container { font-family: var(--font-body); background: var(--bg); }
+.leaflet-control-attribution { font-size: 10px; }
+.leaflet-bottom.leaflet-right { margin-right: 4px; }
+
+/* ---------- Modal form ---------- */
+.modal { position: fixed; inset: 0; z-index: 900; background: rgba(8, 14, 11, .55); display: grid; place-items: center; padding: 16px; }
+.sheet {
+  background: var(--panel); border-radius: 18px; box-shadow: var(--shadow); width: min(560px, 100%);
+  max-height: calc(100% - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); overflow-y: auto;
+}
+.sheet-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.sheet-head h2 { font-size: 21px; }
+.sheet-head .icon-btn { margin-left: auto; }
+form { display: grid; gap: 16px; padding: 18px; }
+.field { display: grid; gap: 6px; }
+.field > label, .field > .label-row { font-weight: 600; font-size: 14px; }
+.hint { font-size: 12.5px; color: var(--muted); font-weight: 400; }
+input[type=text], textarea, select {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+textarea { min-height: 76px; resize: vertical; }
+.cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.opt { position: relative; }
+.opt input { position: absolute; opacity: 0; inset: 0; }
+.opt span {
+  display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 13.5px;
+}
+.opt input:checked + span { border-color: var(--accent); background: var(--chip); font-weight: 600; }
+.opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; }
+.photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.photos .ph { width: 76px; height: 76px; border-radius: 10px; background: var(--chip) center/cover; position: relative; }
+.photos .ph button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--fg); color: var(--panel); font-size: 13px; line-height: 1; }
+.photos label.add {
+  width: 76px; height: 76px; border-radius: 10px; border: 1.5px dashed var(--line); display: grid; place-items: center;
+  color: var(--muted); font-size: 12px; text-align: center; cursor: pointer;
+}
+.hp { position: absolute; left: -9999px; }
+.form-error { color: var(--danger); font-weight: 600; margin: 0; }
+.form-foot { display: flex; justify-content: flex-end; gap: 8px; }
+
+.toast {
+  position: fixed; z-index: 1000; left: 50%; translate: -50% 0; bottom: max(90px, calc(env(safe-area-inset-bottom, 0px) + 90px));
+  background: var(--fg); color: var(--panel); padding: 10px 16px; border-radius: 10px; font-weight: 600; box-shadow: var(--shadow);
+  max-width: calc(100vw - 32px);
+}
+
+/* ---------- Phone ---------- */
+.sheet-toggle { display: none; }
+@media (max-width: 760px) {
+  .panel {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; border-radius: 18px 18px 0 0; height: 46%;
+    transition: height .25s ease; padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .panel.expanded { height: calc(100% - 64px - env(safe-area-inset-top, 0px)); }
+  .panel.collapsed { height: 132px; }
+  .panel-head { padding: 6px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px)); }
+  .sheet-toggle { display: block; justify-self: center; width: 64px; height: 18px; border: 0; background: none; padding: 6px 0; }
+  .sheet-toggle::before { content: ""; display: block; height: 5px; border-radius: 3px; background: var(--line); }
+  .tagline { display: none; }
+  .brand h1 { font-size: 22px; }
+  .logo { width: 32px; height: 32px; }
+  .fab { bottom: auto; top: max(16px, calc(env(safe-area-inset-top, 0px) + 16px)); right: max(72px, calc(env(safe-area-inset-right, 0px) + 72px)); padding: 11px 16px; }
+  .banner { top: auto; bottom: calc(46% + 12px); left: 16px; right: 16px; max-width: none; }
+  .modal { padding: 0; place-items: end stretch; }
+  .sheet { border-radius: 18px 18px 0 0; width: 100%; max-height: calc(100% - 24px - env(safe-area-inset-top, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
+@media (prefers-reduced-motion: reduce) { .panel { transition: none; } }
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="Map of vending machines"></div>
+
+<aside class="panel" id="panel">
+  <div class="panel-head">
+    <button class="sheet-toggle" id="sheetToggle" aria-label="Expand or collapse the list"></button>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">A1</div>
+      <h1>VEND</h1>
+      <div class="count" id="count"></div>
+    </div>
+    <p class="tagline">Find a vending machine nearby, or add one you spotted. Tap a pin for photos, payment options and what's inside.</p>
+    <div class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="text" placeholder="Search name, drink, snack, place…" aria-label="Search" autocomplete="off">
+    </div>
+    <div class="filters">
+      <div class="chips" id="catChips" role="group" aria-label="Categories"></div>
+      <button class="more-toggle" id="moreToggle" type="button" aria-expanded="false">More filters</button>
+      <div id="moreFilters" class="filters" hidden>
+        <div class="label">Payment</div>
+        <div class="chips" id="payChips" role="group" aria-label="Payment"></div>
+        <div class="label">Access</div>
+        <div class="chips" id="accessChips" role="group" aria-label="Access"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <div class="detail" id="detail" hidden></div>
+</aside>
+
+<button class="locate" id="locate" aria-label="Show my location" title="Show my location">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg>
+</button>
+<button class="fab" id="addBtn">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  Add a machine
+</button>
+<div class="banner" id="banner" hidden></div>
+
+<!-- Placing a new pin -->
+<svg class="crosshair" id="crosshair" hidden width="40" height="52" viewBox="0 0 40 52" aria-hidden="true">
+  <path d="M20 50s16-16.5 16-30A16 16 0 0 0 4 20c0 13.5 16 30 16 30Z" fill="currentColor" style="color: var(--accent)" stroke="#fff" stroke-width="2.5"/>
+  <circle cx="20" cy="20" r="6" fill="#fff"/>
+</svg>
+<div class="place-bar" id="placeBar" hidden>
+  <p>Move the map so the pin sits on the machine</p>
+  <div class="coords" id="placeCoords"></div>
+  <div class="actions">
+    <button class="btn" type="button" id="placeLocate">Use my location</button>
+    <button class="btn" type="button" id="placeCancel">Cancel</button>
+    <button class="btn primary" type="button" id="placeNext">Next</button>
+  </div>
+</div>
+
+<!-- Add form -->
+<div class="modal" id="modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="formTitle">
+    <div class="sheet-head">
+      <h2 id="formTitle">Add a vending machine</h2>
+      <button class="icon-btn" type="button" id="formClose" aria-label="Close">✕</button>
+    </div>
+    <form id="addForm" novalidate>
+      <div class="field">
+        <label for="f-name">Name of the place <span class="hint">required</span></label>
+        <input id="f-name" type="text" maxlength="120" placeholder="e.g. Durham Station, platform 2" required>
+      </div>
+      <div class="field">
+        <div class="label-row">What does it sell? <span class="hint">required</span></div>
+        <div class="cat-grid" id="f-cats"></div>
+      </div>
+      <div class="field">
+        <label for="f-desc">Description</label>
+        <textarea id="f-desc" maxlength="2000" placeholder="Brands, products, prices…"></textarea>
+      </div>
+      <div class="field">
+        <label for="f-addr">Address</label>
+        <input id="f-addr" type="text" maxlength="300" placeholder="Street address or building">
+      </div>
+      <div class="field">
+        <div class="label-row">Publicly accessible?</div>
+        <div class="row" id="f-public"></div>
+      </div>
+      <div class="field">
+        <div class="label-row">Payments accepted</div>
+        <div class="row" id="f-pay"></div>
+      </div>
+      <div class="field">
+        <label for="f-other">Other information</label>
+        <textarea id="f-other" maxlength="2000" placeholder="Where exactly it is, opening hours, quirks…"></textarea>
+      </div>
+      <div class="field">
+        <div class="label-row">Photos <span class="hint">up to 4</span></div>
+        <div class="photos" id="f-photos">
+          <label class="add" for="f-file">+ Add<br>photo</label>
+        </div>
+        <input id="f-file" type="file" accept="image/*" multiple hidden>
+      </div>
+      <input class="hp" id="f-website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <div class="coords" id="f-coords"></div>
+      <p class="form-error" id="formError" hidden></p>
+      <div class="form-foot">
+        <button class="btn" type="button" id="formBack">Move pin</button>
+        <button class="btn primary" type="submit" id="formSubmit">Add to map</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+/* =====================================================================
+   CONFIG — paste your Apps Script web app URL (ends in /exec) here.
+   Leave it empty to run in demo mode with the built-in copy of the data.
+   ===================================================================== */
+const API_URL = 'https://script.google.com/macros/s/AKfycbyahnOsXDJ_Nm3qZpFxB8IWNByyPTQCYFMVM5yw88_1AsX6n6bH_e686Y2DIXoWdKs/exec';
+
+const CATEGORIES = [
+  { name: 'Cold Drinks', color: '#00a9da', icon: '🥤' },
+  { name: 'Hot Drinks',  color: '#e8322e', icon: '☕' },
+  { name: 'Food',        color: '#7fa800', icon: '🍫' },
+  { name: 'Electronics', color: '#6970f2', icon: '🎧' },
+  { name: 'Beauty',      color: '#c544e0', icon: '💄' },
+  { name: 'Pharmacy',    color: '#f0611a', icon: '💊' },
+  { name: 'Lottery',     color: '#22a82a', icon: '🎟️' },
+  { name: 'Other',       color: '#a8561f', icon: '❓' }
+];
+const PAYMENTS = ['Coin', 'Cash', 'Credit card', 'IC card (Suica/Pasmo/etc.)'];
+const CAT = Object.fromEntries(CATEGORIES.map(c => [c.name, c]));
+const catOf = n => CAT[n] || CAT.Other;
+
+// Built-in copy of the places from mapotic.com/vend-1 (used in demo mode and as an offline fallback)
+const MAPOTIC_MEDIA = 'https://media.mapotic.com/media/image/geo/20443/';
+const SEED = [[2258171, "Community Center Park", "Cold Drinks", 35.925999, -79.0326813, "Coca-Cola, Dr. Pepper, Powerade", "", "", "", "", 5, "2024-12-02", "@2258171/chapel-hill-community-center-vend.png"], [2258636, "Walmart Neighborhood Market Morrisville", "Cold Drinks", 35.8183524, -78.8452854, "Pepsi & Coca-Cola products", "", "Yes", "Coin, Credit card, Cash", "", "", "2024-12-05", "@2258636/walmart-cary-davis-drive.png"], [2258637, "Walmart Durham (New Hope Commons)", "Cold Drinks", 35.9544474, -78.99911, "Pepsi & Coca-Cola products", "", "Yes", "Cash, Coin, Credit card", "Cans and bottles", "", "2024-12-05", "@2258637/walamrt-durham-new-hope.png"], [2258638, "Walmart Raleigh (Glenwood Ave)", "Cold Drinks", 35.8620065, -78.7071275, "Pepsi & Coca-Cola products", "", "Yes", "Cash, Coin, Credit card", "Cans and bottles", "", "2024-12-05", "@2258638/walmart-raleigh-glenwood.png"], [2258639, "AMC Southpoint", "Cold Drinks", 35.9050282, -78.945289, "Pepsi & Aquafina", "", "Yes", "Cash, Coin, Credit card", "", "", "2024-12-05", "@2258639/southpoint-amc-vending.png"], [2258641, "Sarah P. Duke Gardens", "Cold Drinks", 36.0019315, -78.9317145, "Coca-Cola", "", "Yes", "Coin, Cash", "", "", "2024-12-05", "@2258641/duke-gardens-vending.png"], [2258642, "Walmart North Raleigh (Briar Creek)", "Cold Drinks", 35.9123224, -78.7786239, "Pepsi & Coca-Cola products", "", "Yes", "Cash, Coin, Credit card", "Inside Market entrance", "", "2024-12-05", "@2258642/walmart-briar-creek-vending.png"], [2258643, "Dorcas", "Cold Drinks", 35.7819495, -78.7987549, "Pepsi products", "", "Yes", "Cash, Coin, Credit card", "", "", "2024-12-05", "@2258643/dorcas-vending.png"], [2258689, "Harris Teeter (Downtown Durham)", "Lottery", 36.0097779, -78.9239852, "NC Lottery vending machine", "", "Yes", "Cash, Credit card", "Requires ID", "", "2024-12-05", "@2258689/7ac6a6bf-c8b6-4ce7-a18b-05915d054050.jpg"], [2258704, "Walmart (Torrance)", "Cold Drinks", 33.856432, -118.3008041, "Pepsi, Coca-Cola, 7-Up", "", "Yes", "Coin, Cash", "", "", "2024-12-05", "@2258704/walamrt-vending-torrence.png"], [2258706, "Walmart Forth Worth (Airport Freeway)", "Cold Drinks", 32.7745811, -97.2916882, "Pepsi, Coca-Cola, Dr. Pepper", "", "Yes", "Cash, Coin, Credit card", "", "", "2024-12-05", "@2258706/walmart-fort-worth-airport-fwy.png"], [2258712, "Walmart Renton", "Cold Drinks", 47.4722062, -122.2204903, "Pepsi products", "", "Yes", "Cash, Coin, Credit card", "", "", "2024-12-05", "@2258712/walmart-vending-renton-wa.png"], [2258713, "Walmart Neighborhood Market (Kansas City, MO)", "Cold Drinks", 39.1898258, -94.5468554, "Pepsi & Coca-Cola", "", "Yes", "Coin, Credit card, Cash", "", "", "2024-12-05", "@2258713/walmart-vending-kansas-city-mo.png"], [2258721, "O2 Fitness University Drive", "Cold Drinks", 35.9673658, -78.9537939, "Gatorade, Muscle Milk, water", "", "Yes", "Coin, Credit card, Cash", "Inside lobby, next to front desk", "", "2024-12-05", "@2258721/20241205-174827.jpg"], [2580944, "Carthage Sav way", "Cold Drinks", 36.2665158, -85.9577966, "Cold Drinks", "80 Dixon Springs Hwy, Carthage, TN 37030", "Yes", "Coin, Cash", "", "", "2025-07-05", ""], [2580945, "Walmart", "Cold Drinks", 36.2452608, -85.9392835, "Cold Drinks", "125 Myers St, Carthage, TN 37030", "Yes", "Coin, Cash", "Coke, Pepsi, and Walmart Brand", "", "2025-07-05", ""], [2862494, "Cft San Agustin", "Cold Drinks", -35.851472, -71.592624, "Maquina de bebidas de cola", "Colo Colo 840, 3580829 Linares, Maule", "Yes", "Cash, Credit card", "", "", "2025-09-09", "@2862494/whatsapp-image-2025-09-09-at-12-30-18-51cbaa62.jpg"], [2869995, "West End Laundromat", "Cold Drinks", 39.4116137, -77.4222666, "", "", "Yes", "Coin", "", "", "2025-09-25", ""], [2888637, "Grove drive", "Cold Drinks", 42.1101295, -80.1259412, "Pepsi dr pepper mountain dew", "1945 grove drive", "Yes", "Coin, Cash", "", "", "2025-10-13", ""], [2891714, "CCBC Catonsville", "Cold Drinks", 39.2553318, -76.7357469, "2nd floor of the CCBC Catonsville Center for the Arts", "800 North Rolling Road, Catonsville MD", "Yes", "Cash, Coin, Credit card", "", 5, "2025-10-15", "@2891714/image.jpg"], [3424130, "Seton - Jasper Healthcare Centre", "Cold Drinks", 52.876006, -118.0844561, "Bottled Coca-Cola machine", "518 Robson St, Jasper, AB", "Yes", "Cash, Credit card", "", "", "2026-04-21", "@3424130/20260421-092210.jpg"], [3424131, "Seton - Jasper Healthcare Centre", "Food", 52.876006, -118.0844561, "Expensive", "518 Robson St, Jasper, AB", "Yes", "Credit card, Cash", "", "", "2026-04-21", "@3424131/20260421-092210.jpg"], [3431409, "College of the Redwoods (outside cafe)", "Cold Drinks", 40.6987317, -124.1987899, "", "", "No", "Cash, Coin, Credit card", "You may need to be enrolled as a student to access this part of the campus", "", "2026-04-23", ""], [3431410, "College of the Redwoods (fire department breezeway)", "Food", 40.6984775, -124.1950967, "", "", "No", "Cash, Coin, Credit card", "You may need to be enrolled as a student to access this part of the campus", "", "2026-04-23", ""], [3431411, "College of the Redwoods (gymnasium)", "Cold Drinks", 40.697788, -124.1954715, "", "", "No", "Cash, Coin, Credit card", "You may need to be enrolled as a student to access this part of the campus", "", "2026-04-23", ""], [3435913, "Laundromat", "Cold Drinks", 40.6916707, -80.2805069, "", "", "", "", "", "", "2026-04-28", "@3435913/img-8918.jpeg"], [3435914, "Laundromat", "Food", 40.6916509, -80.2805371, "", "", "", "", "", "", "2026-04-28", "@3435914/img-8918.jpeg"], [3435915, "Market", "Cold Drinks", 40.6929476, -80.2812084, "", "", "", "", "", "", "2026-04-28", "@3435915/img-8919.jpeg"], [3435916, "Car wash", "Cold Drinks", 40.7072297, -80.2925236, "", "", "", "", "", "", "2026-04-28", "@3435916/img-8920.jpeg"], [3435922, "Walmart", "Cold Drinks", 40.6583073, -80.2272047, "", "", "", "", "", "", "2026-04-28", "@3435922/img-8917.jpeg"], [3533103, "Basingstoke Railway Station, Platform 1", "Food", 51.2683205, -1.0878279, "Snacks and drinks", "", "Yes", "Credit card", "Inside ticket gate", "", "2026-05-24", "@3533103/1.png|@3533103/2.jpg"], [3557926, "Festival Place Bus Station", "Cold Drinks", 51.2658889, -1.0858333, "", "", "Yes", "Credit card", "Pay4Vend app and card payments", "", "2026-05-30", "@3557926/image3.jpg|@3557926/image34.jpg|@3557926/image2.jpg"], [3557931, "Candy Floss Wonderland", "Other", 51.2673611, -1.0878889, "Candy floss/cotton candy", "", "Yes", "Credit card", "Vegan", "", "2026-05-30", "@3557931/image4.jpg|@3557931/image5.jpg"], [3562819, "Don's Quick lube", "Cold Drinks", 30.1902191, -93.2189922, "In lobby", "", "Yes", "Coin, Credit card, Cash", "", "", "2026-06-02", ""], [3562820, "Don's Quick lube", "Food", 30.1902191, -93.2189922, "", "", "Yes", "Cash, Credit card, Coin", "", "", "2026-06-02", ""], [3615727, "Farnborough Main Platform 1", "Cold Drinks", 51.2970278, -0.7546944, "Cold drinks and snacks", "", "Yes", "Credit card", "", "", "2026-06-13", "@3615727/img-6611.jpeg|@3615727/img-6612.jpeg|@3615727/img-6613.jpeg|@3615727/img-6614.jpeg"], [3615728, "Farnborough Main Platform 2", "Cold Drinks", 51.2966667, -0.7556944, "Cold drinks and snacks", "", "Yes", "Credit card", "", "", "2026-06-13", "@3615728/img-6617.jpeg|@3615728/img-6618.jpeg|@3615728/img-6619.jpeg|@3615728/img-6620.jpeg"], [3615739, "Princes Mead Pokemon Card Machine", "Other", 51.2918889, -0.7579722, "TCG Tower with Pokemon cards", "Princes Mead shopping centre", "Yes", "Coin, Credit card", "Near the food court", "", "2026-06-13", "@3615739/img-6624.jpeg|@3615739/img-6626.jpeg"], [3615740, "Woking Station Platform 1", "Cold Drinks", 51.3186111, -0.5566111, "", "", "Yes", "Credit card", "", "", "2026-06-13", "@3615740/img-6632.jpeg|@3615740/img-6633.jpeg"], [3615741, "Woking Station Platform 4", "Cold Drinks", 51.31875, -0.5565833, "Cold drinks and snacks", "", "Yes", "Credit card", "Under the stairs", "", "2026-06-13", "@3615741/img-6636.jpeg|@3615741/img-6637.jpeg|@3615741/img-6638.jpeg|@3615741/img-6639.jpeg"], [3615742, "Woking Station Platform 5", "Cold Drinks", 51.3185278, -0.5566667, "Cold drinks and snacks", "", "Yes", "Credit card", "", "", "2026-06-13", "@3615742/img-6642.jpeg|@3615742/img-6643.jpeg|@3615742/img-6644.jpeg|@3615742/img-6645.jpeg"], [3615749, "Peacocks Offyouglow", "Beauty", 51.3194722, -0.5608333, "Makeup and cosmetics", "", "Yes", "Cash, Coin, Credit card", "In the food court", "", "2026-06-13", "@3615749/img-6652.jpeg|@3615749/img-6653.jpeg|@3615749/img-6655.jpeg"], [3615767, "Peacocks Food Court 1", "Cold Drinks", 51.3198889, -0.5609167, "Cold drinks and snacks", "", "Yes", "Credit card, Coin", "", "", "2026-06-13", "@3615767/img-6656.jpeg|@3615767/img-6657.jpeg|@3615767/img-6658.jpeg"], [3615779, "Peacocks Just Orange", "Cold Drinks", 51.3198056, -0.5607222, "Automated juice bar", "", "Yes", "Cash, Coin, Credit card", "1 for £5, 2 for £9, 3 for £12", "", "2026-06-13", "@3615779/img-6661.jpeg|@3615779/img-6663.jpeg|@3615779/img-6664.jpeg"], [3615780, "Peacocks Food Court 2", "Cold Drinks", 51.3201389, -0.5611667, "Cold drinks and snacks", "", "Yes", "Credit card", "It says it accepts coins, but there's no coin slot.", "", "2026-06-13", "@3615780/img-6666.jpeg|@3615780/img-6668.jpeg|@3615780/img-6669.jpeg"], [3615781, "Peacocks Surrey Vending 1", "Cold Drinks", 51.3198611, -0.5609167, "Cold drinks and snacks", "", "Yes", "Credit card", "Town Mall level, in the liminal corridor", "", "2026-06-13", "@3615781/img-6672.jpeg|@3615781/img-6673.jpeg|@3615781/img-6674.jpeg"], [3615782, "Peacocks Surrey Vending 2", "Cold Drinks", 51.3198611, -0.5608333, "Cold drinks and snacks", "", "Yes", "Credit card", "Between the cinema and accessibility office/car park", "", "2026-06-13", "@3615782/img-6676.jpeg|@3615782/img-6677.jpeg|@3615782/img-6678.jpeg"], [3615783, "Pool in the park - Everyone Replenish", "Cold Drinks", 51.3111389, -0.5573889, "", "", "Yes", "Credit card", "Inside the pool building but open to the public; access may be limited during certain hours.", "", "2026-06-13", "@3615783/img-6690.jpeg|@3615783/img-6696.jpeg|@3615783/img-6697.jpeg|@3615783/img-6698.jpeg|@3615783/img-6700.jpeg"], [3615784, "Pool in the park - M&M's machine", "Food", 51.3111389, -0.5573889, "Sweets and snacks", "", "Yes", "Credit card", "Touch screen! Inside the pool building but open to the public; access may be limited during certain hours.", "", "2026-06-13", "@3615784/img-6693.jpeg|@3615784/img-6694.jpeg|@3615784/img-6701.jpeg"], [3615785, "Esher Station Platform 1", "Cold Drinks", 51.3801944, -0.35275, "Cold drinks and snacks", "", "Yes", "Credit card", "The glass is cracked, but it looks functional.", "", "2026-06-14", "@3615785/img-6707.jpeg|@3615785/img-6708.jpeg|@3615785/img-6709.jpeg"], [3615787, "Weybridge Station Platform 2", "Cold Drinks", 51.3618611, -0.4571944, "Cold drinks and snacks", "", "Yes", "Credit card", "", "", "2026-06-14", "@3615787/img-6714.jpeg|@3615787/img-6715.jpeg|@3615787/img-6716.jpeg|@3615787/img-6717.jpeg|@3615787/img-6718.jpeg"], [3768542, "Next Broderick's", "Cold Drinks", 51.26575, -1.0863333, "Next to Next", "", "Yes", "Credit card", "Contactless and Pay4Vend app", "", "2026-08-05", "@3768542/2.jpg|@3768542/1.jpg|@3768542/3.jpg"], [3768543, "Festival Place", "Cold Drinks", 51.2655278, -1.0860278, "Hallway to toilets", "", "Yes", "Credit card", "Contactless and Pay4Vend app", "", "2026-08-05", "@3768543/1.jpg|@3768543/2.jpg|@3768543/3.jpg"], [3768544, "West Byfleet Railway Station", "Cold Drinks", 51.3396111, -0.5054444, "Platform 1", "", "Yes", "Credit card", "Cold drinks and snacks", "", "2026-08-05", "@3768544/1.jpg|@3768544/2.jpg|@3768544/3.jpg"], [3811406, "Brookwood Railway Station Platform 1", "Cold Drinks", 51.30375, -0.635861, "Cold drinks and snacks", "", "Yes", "Credit card", "", "", "2026-08-26", ""], [3911611, "Toronto Airport international", "Other", 43.6838661, -79.619941, "-Pokemon cards (Japanese)\n-Anime merch (Japanese)\n-Kirby/ Nintendo merch (Japanese)", "", "No", "Credit card", "", "", "2026-10-31", "@3911611/20261031-091931.jpg"], [3911613, "Toronto Airport (International)", "Electronics", 43.6837589, -79.6199803, "Apple products", "", "No", "Credit card", "Headphones\nEarbuds\nSpeakers", "", "2026-10-31", "@3911613/17934534979583583730266716800572.jpg"], [3911614, "Toronto Airport (international)", "Cold Drinks", 43.6835295, -79.6199625, "Regular Coke\nCoke Zero\nDiet Coke\nSprite\nCanada Dry\nOrange Fanta\nRootbeer\nPoweraid\nRegular and White Monster Energy", "Toronto Airport (international)", "No", "Credit card", "", "", "2026-10-31", "@3911614/17934539435742183862644002730128.jpg"], [3911615, "Toronto Airport (International)", "Cold Drinks", 43.6835108, -79.6198941, "Orange Juice\nApple Juice\nIced Tea\nVitamin Water\nBody Armor", "Toronto Airport (international)", "No", "Credit card", "", "", "2026-10-31", "@3911615/17934541226702249270208325382158.jpg"], [3911616, "Toronto Airport (International)", "Cold Drinks", 43.6835057, -79.6199176, "Smart Water", "Toronto Airport (international)", "No", "Credit card", "", "", "2026-10-31", "@3911616/17934542223382832889299665569796.jpg"], [3911617, "Toronto Airport (International)", "Food", 43.6834971, -79.6199308, "Chips:\n-Lays Regular & Ketchup\n-Doritos Regular & Sweet Chilli heat\n-Miss Vikies Salt and Vinegar & Jalapeño\n-Cheetos Regular & Jalapeño\n-Sun chips\n-Fritos\n-Ruffles\n-Plantain\n-Veggie chips\n\nChocolate:\n-Areo\n-Butterfingers\n-Coffee crisp\n-Snickers\n-Caramilk\n-Hersheys (Cookies and cream and Regular)\n-Oh Henry\n-Mars\n-M&M (Peanut and Regular\n-Kit-Kat\n-Kinder Egg\n-Reeses\n-Twix\n\nCandy/Other:\n-Skittles\n-Maynards (Peach)\n-Sour patch kids\n-Sour Sur\n-Bakery cookies\n-Famous Amos\n-Peanuts\n-Nutella Sticks\n-Welches", "Toronto Airport", "No", "Credit card, Coin, Cash", "", "", "2026-10-31", "@3911617/17934547016579054390187160254143.jpg"], [3911618, "Toronto Airport (International)", "Electronics", 43.6827251, -79.6205205, "Apple Products:\nEarbuds\nHeadphones\nChargers\nSpeakers", "Toronto Airport", "No", "Credit card", "", "", "2026-10-31", "@3911618/17934550405256886390456985358581.jpg"]];
+const seedLocations = () => SEED.map(s => ({
+  id: String(s[0]), name: s[1], category: s[2], lat: s[3], lng: s[4], description: s[5], address: s[6],
+  public: s[7], payments: s[8], other: s[9], rating: s[10] === '' ? null : s[10], rating_count: s[10] ? 1 : 0,
+  photos: String(s[12] || '').split('|').filter(Boolean).map(p => p.replace(/^@/, MAPOTIC_MEDIA)), created: s[11]
+}));
+
+// ---------- State ----------
+const state = {
+  all: [], selected: null, q: '',
+  cats: new Set(CATEGORIES.map(c => c.name)), pays: new Set(), access: 'any',
+  photos: [], placing: false
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem('vend:' + k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem('vend:' + k, JSON.stringify(v)); } catch {} }
+};
+
+function thumb(url, w) {
+  if (!url) return '';
+  if (url.includes('media.mapotic.com/media/')) return `https://media.mapotic.com/i/metadata=none,width=${w},height=${w},fit=crop/${url}`;
+  if (url.includes('drive.google.com/thumbnail')) return url.replace(/sz=w\d+/, 'sz=w' + Math.max(w * 2, 200));
+  return url;
+}
+
+// ---------- Map ----------
+const map = L.map('map', { zoomControl: false, worldCopyJump: true, minZoom: 2 });
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+const dark = () => document.documentElement.dataset.theme === 'dark' ||
+  (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+const tiles = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark() ? 'dark_all' : 'rvoyager'}/{z}/{x}/{y}{r}.png`, {
+  maxZoom: 20, subdomains: 'abcd',
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+}).addTo(map);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () =>
+  tiles.setUrl(`https://{s}.basemaps.cartocdn.com/${dark() ? 'dark_all' : 'rvoyager'}/{z}/{x}/{y}{r}.png`));
+
+const cluster = L.markerClusterGroup({
+  showCoverageOnHover: false, maxClusterRadius: 44, spiderfyOnMaxZoom: true,
+  iconCreateFunction: c => L.divIcon({ html: `<div><span>${c.getChildCount()}</span></div>`, className: 'marker-cluster', iconSize: [40, 40] })
+}).addTo(map);
+const markers = new Map();
+const pinIcon = (loc, sel) => L.divIcon({
+  className: '', iconSize: [34, 34], iconAnchor: [4, 34],
+  html: `<div class="pin${sel ? ' sel' : ''}" style="--c:${catOf(loc.category).color}"><span>${catOf(loc.category).icon}</span></div>`
+});
+
+const saved = store.get('view');
+if (saved) map.setView([saved.lat, saved.lng], saved.z); else map.setView([38, -40], 3);
+map.on('moveend', () => {
+  const c = map.getCenter(); store.set('view', { lat: c.lat, lng: c.lng, z: map.getZoom() });
+  if (state.placing) showPlaceCoords(); else renderList();
+});
+
+// ---------- Data ----------
+async function load() {
+  if (!API_URL) {
+    state.all = seedLocations();
+    showBanner('Demo mode: showing the built-in copy of the map. Connect your Google Sheet to save new places.');
+  } else {
+    try {
+      const res = await fetch(API_URL + '?action=list', { redirect: 'follow' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      state.all = data.locations;
+    } catch (e) {
+      state.all = seedLocations();
+      showBanner('Couldn\'t reach the Google Sheet, so this is a saved copy of the map. New places can\'t be added right now.');
+    }
+  }
+  buildFilters();
+  renderMarkers();
+  if (!saved && state.all.length) map.fitBounds(L.latLngBounds(state.all.map(l => [l.lat, l.lng])), { padding: [40, 40] });
+  routeFromHash();
+}
+
+async function api(body) {
+  if (!API_URL) throw new Error('demo');
+  const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+
+// ---------- Filters ----------
+function matches(l) {
+  if (!state.cats.has(catOf(l.category).name)) return false;
+  if (state.access !== 'any' && l.public !== state.access) return false;
+  if (state.pays.size) {
+    const p = (l.payments || '').split(',').map(s => s.trim());
+    for (const x of state.pays) if (!p.includes(x)) return false;
+  }
+  if (state.q) {
+    const hay = [l.name, l.description, l.address, l.other, l.category].join(' ').toLowerCase();
+    if (!state.q.split(/\s+/).every(t => hay.includes(t))) return false;
+  }
+  return true;
+}
+const visible = () => state.all.filter(matches);
+
+function buildFilters() {
+  const counts = {};
+  state.all.forEach(l => counts[catOf(l.category).name] = (counts[catOf(l.category).name] || 0) + 1);
+  $('catChips').innerHTML = CATEGORIES.map(c => `
+    <button class="chip cat" type="button" data-cat="${esc(c.name)}" style="--c:${c.color}" aria-pressed="${state.cats.has(c.name)}" ${counts[c.name] ? '' : 'disabled'}>
+      <span class="dot"></span>${esc(c.name)} <span class="n">${counts[c.name] || 0}</span></button>`).join('');
+  $('payChips').innerHTML = PAYMENTS.map(p => `<button class="chip" type="button" data-pay="${esc(p)}" aria-pressed="${state.pays.has(p)}">${esc(p.replace(' (Suica/Pasmo/etc.)', ''))}</button>`).join('');
+  $('accessChips').innerHTML = [['any', 'Any'], ['Yes', 'Public'], ['No', 'Restricted']].map(([v, t]) =>
+    `<button class="chip" type="button" data-access="${v}" aria-pressed="${state.access === v}">${t}</button>`).join('');
+}
+$('catChips').addEventListener('click', e => {
+  const b = e.target.closest('[data-cat]'); if (!b) return;
+  const c = b.dataset.cat;
+  // First click isolates a category; later clicks toggle; emptying restores all.
+  if (state.cats.size === CATEGORIES.length) state.cats = new Set([c]);
+  else if (state.cats.has(c)) state.cats.delete(c); else state.cats.add(c);
+  if (!state.cats.size) state.cats = new Set(CATEGORIES.map(x => x.name));
+  refresh();
+});
+$('payChips').addEventListener('click', e => {
+  const b = e.target.closest('[data-pay]'); if (!b) return;
+  state.pays.has(b.dataset.pay) ? state.pays.delete(b.dataset.pay) : state.pays.add(b.dataset.pay); refresh();
+});
+$('accessChips').addEventListener('click', e => {
+  const b = e.target.closest('[data-access]'); if (!b) return; state.access = b.dataset.access; refresh();
+});
+$('moreToggle').addEventListener('click', () => {
+  const open = $('moreFilters').hidden; $('moreFilters').hidden = !open;
+  $('moreToggle').setAttribute('aria-expanded', open); $('moreToggle').textContent = open ? 'Fewer filters' : 'More filters';
+});
+let qTimer; $('q').addEventListener('input', e => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.q = e.target.value.trim().toLowerCase(); refresh(); }, 150); });
+function refresh() { buildFilters(); renderMarkers(); }
+
+// ---------- Rendering ----------
+function renderMarkers() {
+  cluster.clearLayers(); markers.clear();
+  const list = visible();
+  list.forEach(l => {
+    const m = L.marker([l.lat, l.lng], { icon: pinIcon(l, state.selected === l.id), title: l.name, keyboard: true });
+    m.on('click', () => select(l.id));
+    markers.set(l.id, m);
+  });
+  cluster.addLayers([...markers.values()]);
+  $('count').innerHTML = `${state.all.length} machines`;
+  renderList();
+}
+
+function renderList() {
+  if (!$('detail').hidden) return;
+  const b = map.getBounds(); const c = map.getCenter();
+  const all = visible();
+  const inView = all.filter(l => b.contains([l.lat, l.lng]))
+    .sort((a, z) => map.distance(c, [a.lat, a.lng]) - map.distance(c, [z.lat, z.lng]));
+  const filtered = all.length !== state.all.length;
+  let html = `<div class="list-meta">${inView.length} in view${filtered ? ` · ${all.length} match filters` : ''}</div>`;
+  if (!inView.length) {
+    html += `<div class="empty">No machines in this part of the map${filtered ? ' with these filters' : ''}.<br>
+      <button class="btn" type="button" id="zoomAll" style="margin-top:12px">Show all ${all.length}</button></div>`;
+  }
+  html += inView.slice(0, 150).map(l => {
+    const ph = l.photos && l.photos[0];
+    const sub = [l.description, l.address].filter(Boolean).join(' · ').replace(/\n/g, ', ') || l.category;
+    return `<button class="item" type="button" data-id="${esc(l.id)}">
+      <span class="thumb" style="${ph ? `background-image:url('${esc(thumb(ph, 112))}')` : ''}">${ph ? '' : catOf(l.category).icon}</span>
+      <span class="item-body"><span class="item-name">${esc(l.name)}</span><br><span class="item-sub">${esc(sub)}</span></span>
+    </button>`;
+  }).join('');
+  $('list').innerHTML = html;
+}
+$('list').addEventListener('click', e => {
+  if (e.target.id === 'zoomAll') { const v = visible(); if (v.length) map.fitBounds(L.latLngBounds(v.map(l => [l.lat, l.lng])), { padding: [40, 40] }); return; }
+  const b = e.target.closest('[data-id]'); if (b) select(b.dataset.id, true);
+});
+
+function select(id, fly) {
+  const l = state.all.find(x => x.id === String(id)); if (!l) return;
+  const prev = state.selected; state.selected = l.id;
+  if (prev && markers.get(prev)) { const p = state.all.find(x => x.id === prev); p && markers.get(prev).setIcon(pinIcon(p, false)); }
+  const m = markers.get(l.id);
+  if (m) m.setIcon(pinIcon(l, true));
+  if (fly || !map.getBounds().contains([l.lat, l.lng])) map.flyTo([l.lat, l.lng], Math.max(map.getZoom(), 16), { duration: .6 });
+  if (history.replaceState) history.replaceState(null, '', '#p-' + l.id);
+  renderDetail(l);
+  setSheet('expanded');
+}
+
+function renderDetail(l) {
+  const c = catOf(l.category);
+  const photos = l.photos || [];
+  const pays = (l.payments || '').split(',').map(s => s.trim()).filter(Boolean);
+  const myRating = (store.get('rated') || {})[l.id];
+  const avg = l.rating ? Number(l.rating) : 0;
+  const gmaps = `https://www.google.com/maps/dir/?api=1&destination=${l.lat},${l.lng}`;
+  const created = l.created ? new Date(l.created).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+  $('detail').innerHTML = `
+    <div class="detail-top">
+      <button class="icon-btn" type="button" id="back" aria-label="Back to list">←</button>
+      <span class="coords">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</span>
+    </div>
+    ${photos.length ? `<div class="gallery">${photos.map((p, i) =>
+      `<a href="${esc(p)}" target="_blank" rel="noopener"><img src="${esc(thumb(p, 800))}" alt="Photo ${i + 1} of ${esc(l.name)}" loading="lazy"></a>`).join('')}</div>
+      ${photos.length > 1 ? `<div class="gallery-count">${photos.length} photos · swipe for more</div>` : ''}` : ''}
+    <div class="detail-body">
+      <div style="display:grid;gap:6px">
+        <span class="cat-tag" style="--c:${c.color}"><span class="dot"></span>${esc(c.name)}</span>
+        <h2>${esc(l.name)}</h2>
+      </div>
+      <dl class="facts">
+        ${l.description ? `<dt>Inside</dt><dd>${esc(l.description)}</dd>` : ''}
+        ${l.address ? `<dt>Address</dt><dd>${esc(l.address)}</dd>` : ''}
+        ${l.public ? `<dt>Access</dt><dd>${l.public === 'Yes' ? 'Publicly accessible' : 'Not publicly accessible'}</dd>` : ''}
+        ${pays.length ? `<dt>Pay with</dt><dd><div class="pay">${pays.map(p => `<span>${esc(p)}</span>`).join('')}</div></dd>` : ''}
+        ${l.other ? `<dt>Notes</dt><dd>${esc(l.other)}</dd>` : ''}
+        ${created ? `<dt>Added</dt><dd>${esc(created)}</dd>` : ''}
+      </dl>
+      <div style="display:grid;gap:4px">
+        <div class="label">${myRating ? 'Your rating' : 'Rate this machine'}</div>
+        <div class="stars" id="stars">
+          ${[1, 2, 3, 4, 5].map(n => `<button type="button" data-star="${n}" class="${n <= (myRating || Math.round(avg)) ? 'on' : ''}" aria-label="${n} star${n > 1 ? 's' : ''}" ${myRating ? 'disabled' : ''}>★</button>`).join('')}
+          <span class="avg">${avg ? `${avg.toFixed(1)} · ${l.rating_count || 1} rating${(l.rating_count || 1) > 1 ? 's' : ''}` : 'no ratings yet'}</span>
+        </div>
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="${gmaps}" target="_blank" rel="noopener">Directions</a>
+        <button class="btn" type="button" id="share">Copy link</button>
+      </div>
+    </div>`;
+  $('panel').classList.add('showing-detail');
+  $('list').hidden = true; $('detail').hidden = false; $('detail').scrollTop = 0;
+  $('back').onclick = closeDetail;
+  $('share').onclick = async () => {
+    const url = location.href.split('#')[0] + '#p-' + l.id;
+    try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { toast(url, 5000); }
+  };
+  $('stars').onclick = async e => {
+    const b = e.target.closest('[data-star]'); if (!b || myRating) return;
+    const n = Number(b.dataset.star);
+    try {
+      const r = await api({ action: 'rate', id: l.id, stars: n });
+      l.rating = r.rating; l.rating_count = r.rating_count;
+    } catch (err) {
+      if (err.message !== 'demo') { toast('Couldn\'t save your rating. Try again in a moment.'); return; }
+      l.rating_count = (l.rating_count || 0) + 1; l.rating = ((avg * (l.rating_count - 1)) + n) / l.rating_count;
+    }
+    const rated = store.get('rated') || {}; rated[l.id] = n; store.set('rated', rated);
+    renderDetail(l); toast('Thanks for rating');
+  };
+}
+function closeDetail() {
+  if (state.selected && markers.get(state.selected)) {
+    const p = state.all.find(x => x.id === state.selected); p && markers.get(state.selected).setIcon(pinIcon(p, false));
+  }
+  state.selected = null; $('panel').classList.remove('showing-detail'); $('detail').hidden = true; $('list').hidden = false;
+  if (history.replaceState) history.replaceState(null, '', location.pathname + location.search);
+  renderList();
+}
+function routeFromHash() { const m = /^#p-(\d+)$/.exec(location.hash); if (m) select(m[1], true); }
+addEventListener('hashchange', routeFromHash);
+
+// ---------- Phone sheet ----------
+function setSheet(s) { if (innerWidth > 760) return; $('panel').classList.remove('expanded', 'collapsed'); if (s !== 'mid') $('panel').classList.add(s); }
+$('sheetToggle').addEventListener('click', () => {
+  const p = $('panel');
+  if (p.classList.contains('expanded')) setSheet('collapsed'); else if (p.classList.contains('collapsed')) setSheet('mid'); else setSheet('expanded');
+});
+$('q').addEventListener('focus', () => setSheet('expanded'));
+map.on('dragstart', () => { if ($('detail').hidden) setSheet('collapsed'); });
+
+// ---------- My location ----------
+let meMarker;
+function locate(cb) {
+  if (!navigator.geolocation) { toast('Location isn\'t available in this browser'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const ll = [pos.coords.latitude, pos.coords.longitude];
+    if (!meMarker) meMarker = L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#2f7cf6', fillOpacity: 1 }).addTo(map);
+    else meMarker.setLatLng(ll);
+    map.flyTo(ll, Math.max(map.getZoom(), 15), { duration: .6 });
+    cb && cb(ll);
+  }, () => toast('Couldn\'t get your location. Check location permission for this site.'), { enableHighAccuracy: true, timeout: 10000 });
+}
+$('locate').addEventListener('click', () => locate());
+
+// ---------- Add flow ----------
+function startPlacing() {
+  closeDetail();
+  state.placing = true; document.body.classList.add('placing');
+  $('crosshair').hidden = false; $('placeBar').hidden = false; $('banner').hidden = true;
+  if (map.getZoom() < 15) toast('Zoom in close so the pin is accurate');
+  showPlaceCoords();
+}
+function stopPlacing() {
+  state.placing = false; document.body.classList.remove('placing');
+  $('crosshair').hidden = true; $('placeBar').hidden = true;
+}
+function showPlaceCoords() { const c = map.getCenter(); $('placeCoords').textContent = `${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`; }
+$('addBtn').addEventListener('click', startPlacing);
+$('placeCancel').addEventListener('click', stopPlacing);
+$('placeLocate').addEventListener('click', () => locate());
+$('placeNext').addEventListener('click', () => {
+  if (map.getZoom() < 12) { toast('Zoom in further to place the pin accurately'); return; }
+  const c = map.getCenter(); state.newLatLng = { lat: +c.lat.toFixed(7), lng: +c.lng.toFixed(7) };
+  $('f-coords').textContent = `Pin at ${state.newLatLng.lat}, ${state.newLatLng.lng}`;
+  $('placeBar').hidden = true; $('modal').hidden = false; $('f-name').focus();
+});
+
+$('f-cats').innerHTML = CATEGORIES.map((c, i) => `<label class="opt"><input type="radio" name="cat" value="${esc(c.name)}" ${i === 0 ? 'checked' : ''}><span>${c.icon} ${esc(c.name)}</span></label>`).join('');
+$('f-public').innerHTML = [['Yes', 'Yes'], ['No', 'No'], ['', 'Not sure']].map(([v, t], i) => `<label class="opt"><input type="radio" name="pub" value="${v}" ${i === 0 ? 'checked' : ''}><span>${t}</span></label>`).join('');
+$('f-pay').innerHTML = PAYMENTS.map(p => `<label class="opt"><input type="checkbox" name="pay" value="${esc(p)}"><span>${esc(p)}</span></label>`).join('');
+
+function closeForm(keepPlacing) {
+  $('modal').hidden = true; $('formError').hidden = true;
+  if (keepPlacing) { $('placeBar').hidden = false; } else { stopPlacing(); }
+}
+$('formClose').addEventListener('click', () => closeForm(false));
+$('formBack').addEventListener('click', () => closeForm(true));
+$('modal').addEventListener('click', e => { if (e.target === $('modal')) closeForm(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) closeForm(false); });
+
+// Photos are resized in the browser so uploads stay small (max 1600px, JPEG).
+function resize(file, max = 1600) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url); resolve(cv.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file isn\'t an image we can read')); };
+    img.src = url;
+  });
+}
+function renderPhotos() {
+  const wrap = $('f-photos');
+  wrap.querySelectorAll('.ph').forEach(n => n.remove());
+  state.photos.forEach((d, i) => {
+    const el = document.createElement('div'); el.className = 'ph'; el.style.backgroundImage = `url(${d})`;
+    el.innerHTML = `<button type="button" aria-label="Remove photo ${i + 1}">×</button>`;
+    el.querySelector('button').onclick = () => { state.photos.splice(i, 1); renderPhotos(); };
+    wrap.insertBefore(el, wrap.querySelector('label.add'));
+  });
+  wrap.querySelector('label.add').hidden = state.photos.length >= 4;
+}
+$('f-file').addEventListener('change', async e => {
+  for (const f of [...e.target.files].slice(0, 4 - state.photos.length)) {
+    try { state.photos.push(await resize(f)); } catch (err) { toast(err.message); }
+  }
+  e.target.value = ''; renderPhotos();
+});
+
+$('addForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = $('formError'); err.hidden = true;
+  const name = $('f-name').value.trim();
+  if (!name) { err.textContent = 'Give the place a name so people can find it.'; err.hidden = false; $('f-name').focus(); return; }
+  const body = {
+    action: 'add', name, category: document.querySelector('input[name=cat]:checked').value,
+    lat: state.newLatLng.lat, lng: state.newLatLng.lng,
+    description: $('f-desc').value.trim(), address: $('f-addr').value.trim(),
+    public: document.querySelector('input[name=pub]:checked').value,
+    payments: [...document.querySelectorAll('input[name=pay]:checked')].map(i => i.value),
+    other: $('f-other').value.trim(), photos: state.photos, website: $('f-website').value
+  };
+  const btn = $('formSubmit'); btn.disabled = true; btn.textContent = state.photos.length ? 'Uploading photos…' : 'Saving…';
+  try {
+    let loc;
+    try {
+      const r = await api(body);
+      if (r.pending) { finishAdd(null); toast('Thanks! Your machine will appear once it\'s reviewed.', 4000); return; }
+      loc = r.location;
+    } catch (ex) {
+      if (ex.message !== 'demo') throw ex;
+      loc = { ...body, id: String(Date.now()), payments: body.payments.join(', '), rating: null, rating_count: 0, created: new Date().toISOString() };
+      delete loc.action; delete loc.website;
+      toast('Demo mode: added for this visit only. Connect the Google Sheet to save it.', 4500);
+    }
+    state.all.push(loc); finishAdd(loc);
+  } catch (ex) {
+    err.textContent = `Couldn't save: ${ex.message}. Check your connection and try again.`; err.hidden = false;
+  } finally { btn.disabled = false; btn.textContent = 'Add to map'; }
+});
+function finishAdd(loc) {
+  $('addForm').reset(); state.photos = []; renderPhotos(); closeForm(false);
+  if (loc) { state.cats.add(catOf(loc.category).name); refresh(); select(loc.id); toast('Added to the map'); }
+}
+
+// ---------- UI helpers ----------
+let toastTimer;
+function toast(msg, ms = 2600) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, ms); }
+function showBanner(msg) {
+  const b = $('banner'); b.innerHTML = `${esc(msg)} <button class="btn" type="button" style="padding:3px 8px;margin-left:6px" aria-label="Dismiss">OK</button>`;
+  b.hidden = false; b.querySelector('button').onclick = () => b.hidden = true;
+}
+
+load();
+</script>
+</body>
+</html>
